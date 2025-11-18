@@ -1,9 +1,11 @@
 package com.example.swiss_army_knife_app
 
-import android.media.MediaRecorder
-import androidx.compose.runtime.*
 import android.Manifest
 import android.content.Context
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.hardware.camera2.CameraAccessException
 import android.hardware.camera2.CameraManager
 import android.os.Bundle
@@ -16,27 +18,20 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.tooling.preview.Preview
 import com.example.swiss_army_knife_app.ui.theme.Swiss_Army_Knife_AppTheme
-import android.hardware.Sensor
-import android.hardware.SensorEvent
-import android.hardware.SensorEventListener
-import android.hardware.SensorManager
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.Text
-import androidx.compose.runtime.*
-import androidx.compose.ui.unit.dp
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -50,6 +45,32 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
+
+@Composable
+fun Tile(text: String, modifier: Modifier = Modifier, elevation: Dp = 8.dp) {
+    Card(
+        modifier = modifier
+            .padding(8.dp)
+            .fillMaxSize(),
+        shape = MaterialTheme.shapes.medium,
+        elevation = CardDefaults.cardElevation(elevation),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.padding(16.dp),
+                maxLines = 2
+            )
+        }
+    }
+}
+
 @Composable
 fun LightSensorTile(modifier: Modifier = Modifier, context: Context) {
     var lux by remember { mutableStateOf(0f) }
@@ -62,35 +83,32 @@ fun LightSensorTile(modifier: Modifier = Modifier, context: Context) {
             override fun onSensorChanged(event: SensorEvent) {
                 lux = event.values[0]
             }
-
-            override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) {
-                // do nothing
-            }
+            override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) {}
         }
     }
 
     DisposableEffect(Unit) {
         sensorManager.registerListener(sensorListener, lightSensor, SensorManager.SENSOR_DELAY_NORMAL)
-        onDispose {
-            sensorManager.unregisterListener(sensorListener)
-        }
+        onDispose { sensorManager.unregisterListener(sensorListener) }
     }
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(4.dp)
-            .background(MaterialTheme.colorScheme.primaryContainer)
-            .clickable {
-                // opcjonalnie można dodać jakieś akcje po kliknięciu
-            },
-        contentAlignment = Alignment.Center
+    Card(
+        modifier = modifier.padding(8.dp).fillMaxSize(),
+        shape = MaterialTheme.shapes.medium,
+        elevation = CardDefaults.cardElevation(8.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
     ) {
-        Text(
-            text = "Światło: ${lux} lx",
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-            color = MaterialTheme.colorScheme.onPrimaryContainer
-        )
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "Światło: ${lux} lx",
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.padding(16.dp)
+            )
+        }
     }
 }
 
@@ -144,30 +162,12 @@ fun FourTilesScreen(modifier: Modifier = Modifier, context: Context) {
                     .weight(1f)
                     .clickable { toggleFlashlight() }
             )
-            Tile(text = "Pogoda", modifier = Modifier.weight(1f))
-        }
-        Row(modifier = Modifier.weight(1f)) {
-            Tile(text = "Latarka", modifier = Modifier.weight(1f).clickable { /* funkcja latarki */ })
             LightSensorTile(modifier = Modifier.weight(1f), context = context)
         }
-
-    }
-}
-
-@Composable
-fun Tile(text: String, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(4.dp)
-            .background(MaterialTheme.colorScheme.primaryContainer),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-            color = MaterialTheme.colorScheme.onPrimaryContainer
-        )
+        Row(modifier = Modifier.weight(1f)) {
+            Tile(text = "Kroki dzisiaj", modifier = Modifier.weight(1f))
+            Tile(text = "Pogoda", modifier = Modifier.weight(1f))
+        }
     }
 }
 
@@ -175,7 +175,6 @@ fun Tile(text: String, modifier: Modifier = Modifier) {
 @Composable
 fun FourTilesScreenPreview() {
     Swiss_Army_Knife_AppTheme {
-        // Context is needed here normally, so preview can't toggle flashlight
         Column(modifier = Modifier.fillMaxSize()) {
             Row(modifier = Modifier.weight(1f)) {
                 Tile(text = "Latarka", modifier = Modifier.weight(1f))
