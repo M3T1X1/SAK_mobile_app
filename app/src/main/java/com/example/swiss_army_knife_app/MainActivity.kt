@@ -15,7 +15,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Card
@@ -39,7 +38,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             Swiss_Army_Knife_AppTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    FourTilesScreen(modifier = Modifier.padding(innerPadding), context = this)
+                    MainScreen(modifier = Modifier.padding(innerPadding), context = this)
                 }
             }
         }
@@ -47,11 +46,14 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun Tile(text: String, modifier: Modifier = Modifier, elevation: Dp = 8.dp) {
+fun Tile(text: String, modifier: Modifier = Modifier, elevation: Dp = 8.dp, onClick: (() -> Unit)? = null) {
     Card(
         modifier = modifier
             .padding(8.dp)
-            .fillMaxSize(),
+            .fillMaxSize()
+            .let {
+                if (onClick != null) it.clickable { onClick() } else it
+            },
         shape = MaterialTheme.shapes.medium,
         elevation = CardDefaults.cardElevation(elevation),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
@@ -113,7 +115,7 @@ fun LightSensorTile(modifier: Modifier = Modifier, context: Context) {
 }
 
 @Composable
-fun FourTilesScreen(modifier: Modifier = Modifier, context: Context) {
+fun FlashlightTile(modifier: Modifier = Modifier, context: Context) {
     val cameraManager = remember {
         context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
     }
@@ -128,7 +130,6 @@ fun FourTilesScreen(modifier: Modifier = Modifier, context: Context) {
             ""
         }
     }
-
     var isFlashOn by remember { mutableStateOf(false) }
     var hasCameraPermission by remember { mutableStateOf(false) }
 
@@ -154,36 +155,95 @@ fun FourTilesScreen(modifier: Modifier = Modifier, context: Context) {
         }
     }
 
-    Column(modifier = modifier.fillMaxSize()) {
-        Row(modifier = Modifier.weight(1f)) {
-            Tile(
-                text = "Latarka",
-                modifier = Modifier
-                    .weight(1f)
-                    .clickable { toggleFlashlight() }
-            )
-            LightSensorTile(modifier = Modifier.weight(1f), context = context)
+    Tile(
+        text = if (isFlashOn) "Latarka ON" else "Latarka OFF",
+        modifier = modifier,
+        onClick = { toggleFlashlight() }
+    )
+}
+
+
+@Composable
+fun MainScreen(modifier: Modifier = Modifier, context: Context) {
+    var currentScreen by remember { mutableStateOf("main") }
+
+    when (currentScreen) {
+        "main" -> {
+            Column(modifier = modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                Row(modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 16.dp)) {
+                    Tile(
+                        text = "Dane",
+                        modifier = Modifier.weight(1f).height(150.dp),
+                        onClick = { currentScreen = "data" }
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Tile(
+                        text = "Klikalne",
+                        modifier = Modifier.weight(1f).height(150.dp),
+                        onClick = { currentScreen = "clickables" }
+                    )
+                }
+            }
         }
-        Row(modifier = Modifier.weight(1f)) {
-            Tile(text = "Kroki dzisiaj", modifier = Modifier.weight(1f))
-            Tile(text = "Pogoda", modifier = Modifier.weight(1f))
-        }
+        "data" -> DataScreen(modifier = modifier, onBack = { currentScreen = "main" }, context = context)
+        "clickables" -> ClickableScreen(modifier = modifier, onBack = { currentScreen = "main" }, context = context)
     }
+}
+
+@Composable
+fun DataScreen(modifier: Modifier, onBack: () -> Unit, context: Context) {
+    Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
+        Text(text = "Dane", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(bottom = 16.dp))
+        Row(modifier = Modifier.weight(1f)) {
+            LightSensorTile(modifier = Modifier.weight(1f), context = context)
+            Spacer(modifier = Modifier.width(16.dp))
+            Tile(text = "Kroki dzisiaj", modifier = Modifier.weight(1f))
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+        Tile(text = "Pogoda", modifier = Modifier.fillMaxWidth().height(80.dp))
+        Spacer(modifier = Modifier.height(24.dp))
+        BackButton(onClick = onBack)    }
+}
+
+@Composable
+fun ClickableScreen(modifier: Modifier, onBack: () -> Unit, context: Context) {
+    Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
+        Text(text = "Klikalne", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(bottom = 16.dp))
+        FlashlightTile(modifier = Modifier.fillMaxWidth().height(150.dp), context = context)
+        Spacer(modifier = Modifier.height(24.dp))
+        BackButton(onClick = onBack)    }
 }
 
 @Preview(showBackground = true)
 @Composable
-fun FourTilesScreenPreview() {
+fun MainScreenPreview() {
     Swiss_Army_Knife_AppTheme {
-        Column(modifier = Modifier.fillMaxSize()) {
-            Row(modifier = Modifier.weight(1f)) {
-                Tile(text = "Latarka", modifier = Modifier.weight(1f))
-                Tile(text = "Pogoda", modifier = Modifier.weight(1f))
-            }
-            Row(modifier = Modifier.weight(1f)) {
-                Tile(text = "Kroki dzisiaj", modifier = Modifier.weight(1f))
-                Tile(text = "Poziom światła: ", modifier = Modifier.weight(1f))
-            }
+        MainScreen(context = androidx.compose.ui.platform.LocalContext.current)
+    }
+}
+@Composable
+fun BackButton(text: String = "Powrót", onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .padding(horizontal = 8.dp),
+        shape = MaterialTheme.shapes.large,
+        elevation = CardDefaults.cardElevation(2.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primary
+        ),
+        onClick = onClick
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onPrimary
+            )
         }
     }
 }
