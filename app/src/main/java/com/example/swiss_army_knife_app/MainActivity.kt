@@ -111,9 +111,75 @@ fun LightSensorTile(modifier: Modifier = Modifier, context: Context) {
         }
     }
 }
+@Composable
+fun StepCounterTile(
+    modifier: Modifier = Modifier,
+    context: Context,
+    hasActivityPermission: Boolean
+) {
+    var steps by remember { mutableIntStateOf(0) }
+    var initialSteps by remember { mutableStateOf(-1f) }
 
+    val sensorManager = remember {
+        context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+    }
+    val stepSensor = remember {
+        sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER)
+    }
+
+    val stepListener = remember {
+        object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent) {
+                if (initialSteps < 0f) {
+                    initialSteps = event.values[0]
+                }
+                steps = (event.values[0] - initialSteps).toInt()
+            }
+            override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) {}
+        }
+    }
+
+    DisposableEffect(hasActivityPermission, stepSensor) {
+        if (hasActivityPermission && stepSensor != null) {
+            sensorManager.registerListener(
+                stepListener,
+                stepSensor,
+                SensorManager.SENSOR_DELAY_UI
+            )
+        }
+        onDispose {
+            sensorManager.unregisterListener(stepListener)
+        }
+    }
+
+    val text = when {
+        !hasActivityPermission -> "Brak uprawnień do aktywności"
+        stepSensor == null -> "Brak sensora kroków"
+        else -> "Kroki dzisiaj: $steps"
+    }
+
+    Card(
+        modifier = modifier.padding(8.dp).fillMaxSize(),
+        shape = MaterialTheme.shapes.medium,
+        elevation = CardDefaults.cardElevation(8.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                modifier = Modifier.padding(16.dp)
+            )
+        }
+    }
+}
 @Composable
 fun FourTilesScreen(modifier: Modifier = Modifier, context: Context) {
+
     val cameraManager = remember {
         context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
     }
@@ -167,6 +233,39 @@ fun FourTilesScreen(modifier: Modifier = Modifier, context: Context) {
         Row(modifier = Modifier.weight(1f)) {
             Tile(text = "Kroki dzisiaj", modifier = Modifier.weight(1f))
             Tile(text = "Pogoda", modifier = Modifier.weight(1f))
+        }
+        var hasActivityPermission by remember { mutableStateOf(false) }
+
+        val activityPermissionLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestPermission(),
+            onResult = { granted -> hasActivityPermission = granted }
+        )
+
+        LaunchedEffect(Unit) {
+            // istniejące:
+            permissionLauncher.launch(Manifest.permission.CAMERA)
+            // nowe:
+            activityPermissionLauncher.launch(Manifest.permission.ACTIVITY_RECOGNITION)
+        }
+
+        Column(modifier = modifier.fillMaxSize()) {
+            Row(modifier = Modifier.weight(1f)) {
+                Tile(
+                    text = "Latarka",
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { toggleFlashlight() }
+                )
+                LightSensorTile(modifier = Modifier.weight(1f), context = context)
+            }
+            Row(modifier = Modifier.weight(1f)) {
+                StepCounterTile(
+                    modifier = Modifier.weight(1f),
+                    context = context,
+                    hasActivityPermission = hasActivityPermission
+                )
+                Tile(text = "Pogoda", modifier = Modifier.weight(1f))
+            }
         }
     }
 }
