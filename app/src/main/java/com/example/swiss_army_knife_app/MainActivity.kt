@@ -28,6 +28,49 @@ import androidx.compose.ui.tooling.preview.Preview
 import com.example.swiss_army_knife_app.ui.theme.Swiss_Army_Knife_AppTheme
 import androidx.compose.foundation.Image
 import androidx.compose.ui.res.painterResource
+
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import org.json.JSONObject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+val cityCoords = mapOf(
+    "Warszawa" to (52.2297 to 21.0122),
+    "Kraków"   to (50.0647 to 19.9450),
+    "Gdańsk"   to (54.3520 to 18.6466),
+    "Wrocław"  to (51.1079 to 17.0385),
+    "Poznań"   to (52.4064 to 16.9252),
+    "Rzeszów"  to (50.0413 to 21.999)
+)
+
+val httpClient = OkHttpClient()
+
+suspend fun fetchCurrentTemperature(city: String): String {
+    val coords = cityCoords[city] ?: return "-- °C"
+    val latitude = coords.first
+    val longitude = coords.second
+
+    val url =
+        "https://api.open-meteo.com/v1/forecast" +
+                "?latitude=$latitude&longitude=$longitude" +
+                "&current_weather=true"
+
+    return withContext(Dispatchers.IO) {
+        try {
+            val request = Request.Builder().url(url).build()
+            httpClient.newCall(request).execute().use { response ->
+                val body = response.body?.string() ?: return@withContext "-- °C"
+                val json = JSONObject(body)
+                val current = json.getJSONObject("current_weather")
+                val temp = current.getDouble("temperature")
+                "${temp} °C"
+            }
+        } catch (e: Exception) {
+            "-- °C"
+        }
+    }
+}
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -242,6 +285,14 @@ fun FlashlightTile(modifier: Modifier = Modifier, context: Context) {
 fun MainScreen(modifier: Modifier = Modifier, context: Context) {
     var currentScreen by remember { mutableStateOf("main") }
 
+    var selectedCity by remember { mutableStateOf("Rzeszów") }
+    var currentTemp by remember { mutableStateOf("-- °C") }
+
+    LaunchedEffect(selectedCity) {
+        val temp = fetchCurrentTemperature(selectedCity)
+        currentTemp = temp
+    }
+
     when (currentScreen) {
         "main" -> {
             Column(
@@ -251,7 +302,6 @@ fun MainScreen(modifier: Modifier = Modifier, context: Context) {
                 verticalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterVertically),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // OBRAZEK PNG NAD KAFELKAMI
                 Image(
                     painter = painterResource(id = R.drawable.fav),
                     contentDescription = "Logo aplikacji",
@@ -283,7 +333,11 @@ fun MainScreen(modifier: Modifier = Modifier, context: Context) {
         "data" -> DataScreen(
             modifier = modifier,
             onBack = { currentScreen = "main" },
-            context = context
+            context = context,
+            selectedCity = selectedCity,
+            onCityChange = { selectedCity = it },
+            currentTemp = currentTemp,
+            onTempChange = { currentTemp = it }
         )
 
         "clickables" -> ClickableScreen(
@@ -295,7 +349,15 @@ fun MainScreen(modifier: Modifier = Modifier, context: Context) {
 }
 
 @Composable
-fun DataScreen(modifier: Modifier, onBack: () -> Unit, context: Context) {
+fun DataScreen(
+    modifier: Modifier,
+    onBack: () -> Unit,
+    context: Context,
+    selectedCity: String,
+    onCityChange: (String) -> Unit,
+    currentTemp: String,
+    onTempChange: (String) -> Unit
+) {
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -307,8 +369,11 @@ fun DataScreen(modifier: Modifier, onBack: () -> Unit, context: Context) {
             style = MaterialTheme.typography.headlineMedium
         )
 
+        // GÓRNY RZĄD – 2 równe kafelki
         Row(
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             LightSensorTile(
@@ -321,14 +386,25 @@ fun DataScreen(modifier: Modifier, onBack: () -> Unit, context: Context) {
             )
         }
 
-        DataTileSurface(
-            text = "Pogoda",
+        // DOLNY RZĄD – 2 równe kafelki
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(90.dp)
-        )
+                .weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            TemperatureTile(
+                modifier = Modifier.weight(1f),
+                currentTemp = currentTemp
+            )
 
-        Spacer(modifier = Modifier.height(8.dp))
+            CityTile(
+                modifier = Modifier.weight(1f),
+                selectedCity = selectedCity,
+                onCityChange = onCityChange,
+                onCityConfirmed = { }
+            )
+        }
 
         BackButton(onClick = onBack)
     }
@@ -373,6 +449,69 @@ fun BackButton(text: String = "Powrót", onClick: () -> Unit) {
             text = text,
             style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
         )
+    }
+}
+
+@Composable
+fun CityTile(
+    modifier: Modifier = Modifier,
+    selectedCity: String,
+    onCityChange: (String) -> Unit,
+    onCityConfirmed: () -> Unit
+) {
+    val cities = listOf("Warszawa", "Kraków", "Gdańsk", "Wrocław", "Poznań", "Rzeszów")
+    var expanded by remember { mutableStateOf(false) }
+
+    DataTileSurface(modifier = modifier, text = "") {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = "Miasto",
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+            Spacer(Modifier.height(4.dp))
+            OutlinedButton(onClick = { expanded = true }) {
+                Text(selectedCity)
+            }
+
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false }
+            ) {
+                cities.forEach { city ->
+                    DropdownMenuItem(
+                        text = { Text(city) },
+                        onClick = {
+                            onCityChange(city)
+                            expanded = false
+                            onCityConfirmed()
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun TemperatureTile(
+    modifier: Modifier = Modifier,
+    currentTemp: String
+) {
+    DataTileSurface(modifier = modifier, text = "") {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = "Aktualna temperatura",
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = currentTemp,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+        }
     }
 }
 
