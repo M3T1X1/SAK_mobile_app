@@ -162,7 +162,50 @@ fun FlashlightTile(modifier: Modifier = Modifier, context: Context) {
     )
 }
 
+@Composable
+fun StepCounterTile(modifier: Modifier = Modifier, context: Context) {
+    var steps by remember { mutableStateOf(0) }
+    var initialValue by remember { mutableStateOf<Float?>(null) }
 
+    val sensorManager = remember { context.getSystemService(Context.SENSOR_SERVICE) as SensorManager }
+    val stepSensor = remember { sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER) }
+
+    val listener = remember {
+        object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent) {
+                val total = event.values[0]
+                if (initialValue == null) {
+                    initialValue = total
+                }
+                steps = (total - (initialValue ?: total)).toInt()
+            }
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+        }
+    }
+
+    DisposableEffect(Unit) {
+        if (stepSensor != null) {
+            sensorManager.registerListener(listener, stepSensor, SensorManager.SENSOR_DELAY_NORMAL)
+        }
+        onDispose { sensorManager.unregisterListener(listener) }
+    }
+
+    Card(
+        modifier = modifier.padding(8.dp).fillMaxSize(),
+        shape = MaterialTheme.shapes.medium,
+        elevation = CardDefaults.cardElevation(8.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+    ) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(
+                text = "Kroki: $steps",
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.padding(16.dp)
+            )
+        }
+    }
+}
 @Composable
 fun MainScreen(modifier: Modifier = Modifier, context: Context) {
     var currentScreen by remember { mutableStateOf("main") }
@@ -197,7 +240,7 @@ fun DataScreen(modifier: Modifier, onBack: () -> Unit, context: Context) {
         Row(modifier = Modifier.weight(1f)) {
             LightSensorTile(modifier = Modifier.weight(1f), context = context)
             Spacer(modifier = Modifier.width(16.dp))
-            Tile(text = "Kroki dzisiaj", modifier = Modifier.weight(1f))
+            StepCounterTile(modifier = Modifier.weight(1f), context = context)
         }
         Spacer(modifier = Modifier.height(16.dp))
         Tile(text = "Pogoda", modifier = Modifier.fillMaxWidth().height(80.dp))
