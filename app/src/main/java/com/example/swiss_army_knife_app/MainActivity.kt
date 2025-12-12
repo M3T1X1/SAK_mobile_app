@@ -28,6 +28,10 @@ import androidx.compose.ui.tooling.preview.Preview
 import com.example.swiss_army_knife_app.ui.theme.Swiss_Army_Knife_AppTheme
 import androidx.compose.foundation.Image
 import androidx.compose.ui.res.painterResource
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -281,6 +285,41 @@ fun FlashlightTile(modifier: Modifier = Modifier, context: Context) {
     )
 }
 
+fun vibratePhone(context: Context, millis: Long = 4000L) {
+    val vibrator: Vibrator? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        val vm = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+        vm.defaultVibrator
+    } else {
+        @Suppress("DEPRECATION")
+        context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+    }
+
+    if (vibrator?.hasVibrator() == true) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val effect = VibrationEffect.createOneShot(
+                millis,
+                VibrationEffect.DEFAULT_AMPLITUDE
+            )
+            vibrator.vibrate(effect)
+        } else {
+            @Suppress("DEPRECATION")
+            vibrator.vibrate(millis)
+        }
+    }
+}
+
+@Composable
+fun VibrationTile(
+    modifier: Modifier = Modifier,
+    context: Context
+) {
+    Tile(
+        text = "Usuwanie Wody",
+        modifier = modifier,
+        onClick = { vibratePhone(context) }
+    )
+}
+
 @Composable
 fun MainScreen(modifier: Modifier = Modifier, context: Context) {
     var currentScreen by remember { mutableStateOf("main") }
@@ -424,6 +463,13 @@ fun ClickableScreen(modifier: Modifier, onBack: () -> Unit, context: Context) {
         )
 
         FlashlightTile(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(140.dp),
+            context = context
+        )
+
+        VibrationTile(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(140.dp),
