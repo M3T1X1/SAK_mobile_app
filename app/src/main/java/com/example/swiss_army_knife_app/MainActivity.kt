@@ -321,6 +321,66 @@ fun VibrationTile(
 }
 
 @Composable
+fun SpiritLevelTile(
+    modifier: Modifier = Modifier,
+    context: Context
+) {
+    var angleX by remember { mutableStateOf(0f) }
+    var angleY by remember { mutableStateOf(0f) }
+
+    val sensorManager = remember {
+        context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+    }
+    val accelSensor = remember {
+        sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+    }
+
+    val listener = remember {
+        object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent) {
+                val ax = event.values[0]   // lewo/prawo
+                val ay = event.values[1]   // przód/tył
+                val az = event.values[2]   // „góra/dół” (grawitacja)
+
+                // prosta aproksymacja – kąt względem grawitacji w stopniach
+                angleX = Math.toDegrees(kotlin.math.atan2(ax.toDouble(), az.toDouble())).toFloat()
+                angleY = Math.toDegrees(kotlin.math.atan2(ay.toDouble(), az.toDouble())).toFloat()
+            }
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+        }
+    }
+
+    DisposableEffect(Unit) {
+        if (accelSensor != null) {
+            sensorManager.registerListener(
+                listener,
+                accelSensor,
+                SensorManager.SENSOR_DELAY_GAME
+            )
+        }
+        onDispose {
+            sensorManager.unregisterListener(listener)
+        }
+    }
+
+    DataTileSurface(modifier = modifier, text = "") {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = "Poziomica",
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "X: ${angleX.toInt()}°\nY: ${angleY.toInt()}°",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+        }
+    }
+}
+
+@Composable
 fun MainScreen(modifier: Modifier = Modifier, context: Context) {
     var currentScreen by remember { mutableStateOf("main") }
 
@@ -408,7 +468,7 @@ fun DataScreen(
             style = MaterialTheme.typography.headlineMedium
         )
 
-        // GÓRNY RZĄD – 2 równe kafelki
+        // GÓRNY RZĄD – 3 równe kafelki
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -420,6 +480,10 @@ fun DataScreen(
                 context = context
             )
             StepCounterTile(
+                modifier = Modifier.weight(1f),
+                context = context
+            )
+            SpiritLevelTile(
                 modifier = Modifier.weight(1f),
                 context = context
             )
