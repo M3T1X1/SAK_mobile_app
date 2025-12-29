@@ -309,7 +309,6 @@ fun StepCounterTile(
 
     DataTileSurface(modifier = modifier, text = "") {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            // "Kroki" na górze
             Text(
                 text = "Kroki",
                 style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
@@ -563,12 +562,14 @@ fun CityTile(
     modifier: Modifier = Modifier,
     latitude: Float,
     longitude: Float,
+    locations: List<SavedLocation>,
     onCoordsChange: (String, Float, Float) -> Unit
 ) {
     var showDialog by remember { mutableStateOf(false) }
     var latText by remember { mutableStateOf(latitude.toString()) }
     var lonText by remember { mutableStateOf(longitude.toString()) }
     var locationName by remember { mutableStateOf("Nowy punkt") }
+    var nameError by remember { mutableStateOf(false) }
 
     DataTileSurface(modifier = modifier, text = "") {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -594,17 +595,32 @@ fun CityTile(
 
     if (showDialog) {
         AlertDialog(
-            onDismissRequest = { showDialog = false },
+            onDismissRequest = {
+                showDialog = false
+                nameError = false
+            },
             title = { Text("Edytuj współrzędne") },
             text = {
                 Column {
                     OutlinedTextField(
                         value = locationName,
-                        onValueChange = { locationName = it },
+                        onValueChange = {
+                            locationName = it
+                            nameError = false
+                        },
                         label = { Text("Nazwa lokalizacji") },
+                        isError = nameError,
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
+                    if (nameError) {
+                        Text(
+                            text = "Ta nazwa lokalizacji już istnieje",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(start = 16.dp, top = 4.dp)
+                        )
+                    }
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
                         value = latText,
@@ -629,6 +645,12 @@ fun CityTile(
                         val newLat = latText.toFloatOrNull()
                         val newLon = lonText.toFloatOrNull()
 
+                        val nameExists = locations.any { it.name == locationName }
+                        if (nameExists) {
+                            nameError = true
+                            return@TextButton
+                        }
+
                         if (newLat != null && newLon != null &&
                             newLat in -90f..90f && newLon in -180f..180f &&
                             locationName.isNotBlank()) {
@@ -641,7 +663,10 @@ fun CityTile(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDialog = false }) {
+                TextButton(onClick = {
+                    showDialog = false
+                    nameError = false
+                }) {
                     Text("Anuluj")
                 }
             })
@@ -809,6 +834,7 @@ fun MainScreen(
                 modifier = Modifier.weight(1f),
                 latitude = selectedLatitude,
                 longitude = selectedLongitude,
+                locations = locations,
                 onCoordsChange = { name, lat, lon ->
                     val existingIndex = locations.indexOfFirst {
                         it.latitude == lat && it.longitude == lon
