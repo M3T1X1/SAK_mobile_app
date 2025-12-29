@@ -263,7 +263,12 @@ fun LightSensorTile(
 }
 
 @Composable
-fun StepCounterTile(modifier: Modifier = Modifier, context: Context) {
+fun StepCounterTile(
+    modifier: Modifier = Modifier,
+    context: Context,
+    enabled: Boolean,
+    onEnabledChange: (Boolean) -> Unit
+) {
     var steps by remember { mutableStateOf(0) }
     var initialValue by remember { mutableStateOf<Float?>(null) }
 
@@ -287,23 +292,43 @@ fun StepCounterTile(modifier: Modifier = Modifier, context: Context) {
         }
     }
 
-    DisposableEffect(Unit) {
-        if (stepSensor != null) {
+    DisposableEffect(enabled, stepSensor) {
+        if (enabled && stepSensor != null) {
             sensorManager.registerListener(
                 listener,
                 stepSensor,
                 SensorManager.SENSOR_DELAY_NORMAL
             )
         }
-        onDispose { sensorManager.unregisterListener(listener) }
+        onDispose {
+            if (stepSensor != null) {
+                sensorManager.unregisterListener(listener, stepSensor)
+            }
+        }
     }
 
     DataTileSurface(modifier = modifier, text = "") {
-        Text(
-            text = "Kroki:\n$steps",
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-            color = MaterialTheme.colorScheme.onSecondaryContainer
-        )
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            // "Kroki" na górze
+            Text(
+                text = "Kroki",
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+            Spacer(Modifier.height(4.dp))
+
+            Switch(
+                checked = enabled,
+                onCheckedChange = onEnabledChange
+            )
+            Spacer(Modifier.height(4.dp))
+
+            Text(
+                text = if (enabled) "$steps" else "---",
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+        }
     }
 }
 
@@ -680,7 +705,7 @@ fun MainScreen(
     var isLoadingWeather by remember { mutableStateOf(false) }
     var currentLux by remember { mutableStateOf(0f) }
     var autoBrightnessEnabled by remember { mutableStateOf(true) }
-
+    var stepCounterEnabled by remember { mutableStateOf(true) }
     val activity = context as? MainActivity
     val window = (context as? ComponentActivity)?.window
 
@@ -765,7 +790,7 @@ fun MainScreen(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             LightSensorTile(modifier = Modifier.weight(1f), currentLux = currentLux)
-            StepCounterTile(modifier = Modifier.weight(1f), context = context)
+            StepCounterTile(modifier = Modifier.weight(1f), context = context, enabled = stepCounterEnabled, onEnabledChange = { stepCounterEnabled = it })
             SpiritLevelTile(modifier = Modifier.weight(1f), context = context)
         }
 
