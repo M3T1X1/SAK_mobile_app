@@ -9,6 +9,7 @@ import android.hardware.SensorManager
 import android.hardware.camera2.CameraAccessException
 import android.hardware.camera2.CameraManager
 import android.os.Bundle
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -33,46 +34,62 @@ import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
-
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
-
-val cityCoords = mapOf(
-    "Warszawa" to (52.2297 to 21.0122),
-    "Kraków"   to (50.0647 to 19.9450),
-    "Gdańsk"   to (54.3520 to 18.6466),
-    "Wrocław"  to (51.1079 to 17.0385),
-    "Poznań"   to (52.4064 to 16.9252),
-    "Rzeszów"  to (50.0413 to 21.999)
-)
 
 val httpClient = OkHttpClient()
 
-suspend fun fetchCurrentTemperature(city: String): String {
-    val coords = cityCoords[city] ?: return "-- °C"
-    val latitude = coords.first
-    val longitude = coords.second
+data class WeatherData(
+    val temperature: Float = 0f,
+    val humidity: Float = 0f,
+    val precipitation: Float = 0f,
+    val windSpeed: Float = 0f,
+    val windDirection: Float = 0f,
+    val weatherCode: Int = 0
+)
 
-    val url =
-        "https://api.open-meteo.com/v1/forecast" +
-                "?latitude=$latitude&longitude=$longitude" +
-                "&current_weather=true"
+suspend fun fetchWeatherData(latitude: Float, longitude: Float): WeatherData {
+    val url = "https://api.open-meteo.com/v1/forecast" +
+            "?latitude=$latitude&longitude=$longitude" +
+            "&current=temperature_2m,relative_humidity_2m,precipitation,weather_code,wind_speed_10m,wind_direction_10m" +
+            "&timezone=Europe/Warsaw"
 
     return withContext(Dispatchers.IO) {
         try {
             val request = Request.Builder().url(url).build()
             httpClient.newCall(request).execute().use { response ->
-                val body = response.body?.string() ?: return@withContext "-- °C"
+                if (!response.isSuccessful) {
+                    Log.e("WeatherAPI", "HTTP ${response.code}: ${response.message}")
+                    return@withContext WeatherData()
+                }
+
+                val body = response.body?.string() ?: return@withContext WeatherData()
+                Log.d("WeatherAPI", "Raw response: $body")
+
                 val json = JSONObject(body)
-                val current = json.getJSONObject("current_weather")
-                val temp = current.getDouble("temperature")
-                "${temp} °C"
+                val current = json.optJSONObject("current") ?: run {
+                    Log.e("WeatherAPI", "No 'current' object in response")
+                    return@withContext WeatherData()
+                }
+
+                WeatherData(
+                    temperature = current.optDouble("temperature_2m", 0.0).toFloat(),
+                    humidity = current.optDouble("relative_humidity_2m", 0.0).toFloat(),
+                    precipitation = current.optDouble("precipitation", 0.0).toFloat(),
+                    windSpeed = current.optDouble("wind_speed_10m", 0.0).toFloat(),
+                    windDirection = current.optDouble("wind_direction_10m", 0.0).toFloat(),
+                    weatherCode = current.optInt("weather_code", 0)
+                ).also { data ->
+                    Log.d("WeatherAPI", "Parsed: temp=${data.temperature}, hum=${data.humidity}")
+                }
             }
         } catch (e: Exception) {
-            "-- °C"
+            Log.e("WeatherAPI", "Fetch error: ${e.message}", e)
+            WeatherData(temperature = -999f)
         }
     }
 }
@@ -103,6 +120,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun AmbientLightController(
     context: Context,
+    enabled: Boolean,
     onLuxChange: (Float) -> Unit
 ) {
     var lux by remember { mutableStateOf(0f) }
@@ -123,15 +141,22 @@ fun AmbientLightController(
         }
     }
 
-    DisposableEffect(Unit) {
-        if (lightSensor != null) {
+    LaunchedEffect(enabled, lightSensor) {
+        if (enabled && lightSensor != null) {
             sensorManager.registerListener(
                 sensorListener,
                 lightSensor,
                 SensorManager.SENSOR_DELAY_NORMAL
             )
+        } else if (lightSensor != null) {
+            sensorManager.unregisterListener(sensorListener, lightSensor)
         }
-        onDispose { sensorManager.unregisterListener(sensorListener) }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            sensorManager.unregisterListener(sensorListener, lightSensor)
+        }
     }
 }
 
@@ -378,7 +403,7 @@ fun SpiritLevelTile(
             sensorManager.registerListener(
                 listener,
                 accelSensor,
-                SensorManager.SENSOR_DELAY_GAME
+                1000000000
             )
         }
         onDispose {
@@ -404,184 +429,6 @@ fun SpiritLevelTile(
 }
 
 @Composable
-fun MainScreen(
-    modifier: Modifier = Modifier,
-    context: Context
-) {
-    var currentScreen by remember { mutableStateOf("main") }
-    var selectedCity by remember { mutableStateOf("Rzeszów") }
-    var currentTemp by remember { mutableStateOf("-- °C") }
-    var currentLux by remember { mutableStateOf(0f) }
-    var brightnessLevel by remember { mutableStateOf(0.5f) }
-
-    AmbientLightController(
-        context = context,
-        onLuxChange = { level ->
-            brightnessLevel = level
-            currentLux = level * 1000f
-        }
-    )
-
-    val activity = context as MainActivity
-    LaunchedEffect(brightnessLevel) {
-        activity.setScreenBrightness(brightnessLevel)
-    }
-
-    LaunchedEffect(selectedCity) {
-        val temp = fetchCurrentTemperature(selectedCity)
-        currentTemp = temp
-    }
-
-    when (currentScreen) {
-        "main" -> {
-            Column(
-                modifier = modifier
-                    .fillMaxSize()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterVertically),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Image(
-                    painter = painterResource(id = R.drawable.fav),
-                    contentDescription = "Logo aplikacji",
-                    modifier = Modifier.size(96.dp)
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Tile(
-                        text = "Dane",
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(140.dp),
-                        onClick = { currentScreen = "data" }
-                    )
-                    Tile(
-                        text = "Klikalne",
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(140.dp),
-                        onClick = { currentScreen = "clickables" }
-                    )
-                }
-            }
-        }
-        "data" -> DataScreen(
-            modifier = modifier,
-            onBack = { currentScreen = "main" },
-            context = context,
-            selectedCity = selectedCity,
-            onCityChange = { selectedCity = it },
-            currentTemp = currentTemp,
-            currentLux = currentLux
-        )
-        "clickables" -> ClickableScreen(
-            modifier = modifier,
-            onBack = { currentScreen = "main" },
-            context = context
-        )
-    }
-}
-
-@Composable
-fun DataScreen(
-    modifier: Modifier,
-    onBack: () -> Unit,
-    context: Context,
-    selectedCity: String,
-    onCityChange: (String) -> Unit,
-    currentTemp: String,
-    currentLux: Float
-) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Text(
-            text = "Dane",
-            style = MaterialTheme.typography.headlineMedium
-        )
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            LightSensorTile(
-                modifier = Modifier.weight(1f),
-                currentLux = currentLux
-            )
-            StepCounterTile(
-                modifier = Modifier.weight(1f),
-                context = context
-            )
-            SpiritLevelTile(
-                modifier = Modifier.weight(1f),
-                context = context
-            )
-        }
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            TemperatureTile(
-                modifier = Modifier.weight(1f),
-                currentTemp = currentTemp
-            )
-            CityTile(
-                modifier = Modifier.weight(1f),
-                selectedCity = selectedCity,
-                onCityChange = onCityChange,
-                onCityConfirmed = { }
-            )
-        }
-
-        BackButton(onClick = onBack)
-    }
-}
-
-@Composable
-fun ClickableScreen(modifier: Modifier, onBack: () -> Unit, context: Context) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Text(
-            text = "Klikalne",
-            style = MaterialTheme.typography.headlineMedium
-        )
-
-        FlashlightTile(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(140.dp),
-            context = context
-        )
-
-        VibrationTile(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(140.dp),
-            context = context
-        )
-
-        Spacer(modifier = Modifier.weight(1f))
-
-        BackButton(onClick = onBack)
-    }
-}
-
-@Composable
 fun BackButton(text: String = "Powrót", onClick: () -> Unit) {
     Button(
         onClick = onClick,
@@ -600,61 +447,267 @@ fun BackButton(text: String = "Powrót", onClick: () -> Unit) {
 @Composable
 fun CityTile(
     modifier: Modifier = Modifier,
-    selectedCity: String,
-    onCityChange: (String) -> Unit,
-    onCityConfirmed: () -> Unit
+    latitude: Float,
+    longitude: Float,
+    onCoordsChange: (Float, Float) -> Unit
 ) {
-    val cities = listOf("Warszawa", "Kraków", "Gdańsk", "Wrocław", "Poznań", "Rzeszów")
-    var expanded by remember { mutableStateOf(false) }
+    var showDialog by remember { mutableStateOf(false) }
+    var latText by remember { mutableStateOf(latitude.toString()) }
+    var lonText by remember { mutableStateOf(longitude.toString()) }
 
     DataTileSurface(modifier = modifier, text = "") {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                text = "Miasto",
+                text = "Współrzędne",
                 style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                 color = MaterialTheme.colorScheme.onSecondaryContainer
             )
             Spacer(Modifier.height(4.dp))
-            OutlinedButton(onClick = { expanded = true }) {
-                Text(selectedCity)
-            }
 
-            DropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false }
-            ) {
-                cities.forEach { city ->
-                    DropdownMenuItem(
-                        text = { Text(city) },
-                        onClick = {
-                            onCityChange(city)
-                            expanded = false
-                            onCityConfirmed()
-                        }
+            Text(
+                text = "Lat: ${String.format("%.4f", latitude)}\nLon: ${String.format("%.4f", longitude)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(onClick = { showDialog = true }) {
+                Text("Edytuj")
+            }
+        }
+    }
+
+    if (showDialog) {
+        AlertDialog(
+            onDismissRequest = { showDialog = false },
+            title = { Text("Edytuj współrzędne") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = latText,
+                        onValueChange = { latText = it },
+                        label = { Text("Szerokość (lat) -90..90") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = lonText,
+                        onValueChange = { lonText = it },
+                        label = { Text("Długość (lon) -180..180") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val newLat = latText.toFloatOrNull()
+                        val newLon = lonText.toFloatOrNull()
+
+                        if (newLat != null && newLon != null &&
+                            newLat in -90f..90f && newLon in -180f..180f) {
+                            onCoordsChange(newLat, newLon)
+                            showDialog = false
+                        }
+                    }
+                ) {
+                    Text("OK")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDialog = false }) {
+                    Text("Anuluj")
+                }
+            }
+        )
+    }
+}
+
+@Composable
+fun WeatherTile(
+    modifier: Modifier = Modifier,
+    weather: WeatherData,
+    isLoading: Boolean = false
+) {
+    DataTileSurface(modifier = modifier, text = "") {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = "Pogoda",
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+            Spacer(Modifier.height(4.dp))
+
+            if (isLoading) {
+                Text(
+                    text = "Ładowanie...",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+            } else if (weather.temperature < -100f) {
+                Text(
+                    text = "Błąd API",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.error
+                )
+            } else {
+                Text(
+                    text = "${weather.temperature}°C",
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+                Text(
+                    text = "Wilg: ${weather.humidity.toInt()}%\nWiatr: ${weather.windSpeed.toInt()} km/h\nOpady: ${weather.precipitation.toInt()} mm",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
             }
         }
     }
 }
 
 @Composable
-fun TemperatureTile(
+fun MainScreen(
     modifier: Modifier = Modifier,
-    currentTemp: String
+    context: Context
 ) {
-    DataTileSurface(modifier = modifier, text = "") {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                text = "Aktualna temperatura",
-                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onSecondaryContainer
+    var selectedLatitude by remember { mutableStateOf(50.0413f) }
+    var selectedLongitude by remember { mutableStateOf(21.999f) }
+    var weatherData by remember { mutableStateOf(WeatherData()) }
+    var isLoadingWeather by remember { mutableStateOf(false) }
+    var currentLux by remember { mutableStateOf(0f) }
+    var brightnessLevel by remember { mutableStateOf(0.5f) }
+    var autoBrightnessEnabled by remember { mutableStateOf(true) }
+
+    AmbientLightController(
+        context = context,
+        enabled = autoBrightnessEnabled,
+        onLuxChange = { level ->
+            brightnessLevel = level
+            currentLux = level * 1000f
+        }
+    )
+
+    val activity = context as MainActivity
+    LaunchedEffect(brightnessLevel, autoBrightnessEnabled) {
+        if (autoBrightnessEnabled) {
+            activity.setScreenBrightness(brightnessLevel)
+        } else {
+            activity.setScreenBrightness(0.5f)
+        }
+    }
+
+    LaunchedEffect(selectedLatitude, selectedLongitude) {
+        while (true) {
+            isLoadingWeather = true
+            try {
+                weatherData = fetchWeatherData(selectedLatitude, selectedLongitude)
+                Log.d("Weather", "Updated: ${weatherData.temperature}°C")
+            } catch (e: Exception) {
+                Log.e("Weather", "Fetch failed: ${e.message}")
+                weatherData = WeatherData(temperature = -999f)
+            } finally {
+                isLoadingWeather = false
+            }
+            delay(30000)
+        }
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Image(
+                    painter = painterResource(id = R.drawable.fav),
+                    contentDescription = "Logo",
+                    modifier = Modifier.size(32.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Swiss Army Knife",
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontWeight = FontWeight.Bold
+                    )
+                )
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.End
+            ) {
+                Text(
+                    text = if (autoBrightnessEnabled) "Auto" else "50%",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Switch(
+                    checked = autoBrightnessEnabled,
+                    onCheckedChange = { autoBrightnessEnabled = it }
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            LightSensorTile(modifier = Modifier.weight(1f), currentLux = currentLux)
+            StepCounterTile(modifier = Modifier.weight(1f), context = context)
+            SpiritLevelTile(modifier = Modifier.weight(1f), context = context)
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            WeatherTile(
+                modifier = Modifier.weight(1f),
+                weather = weatherData,
+                isLoading = isLoadingWeather
             )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = currentTemp,
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onSecondaryContainer
+            CityTile(
+                modifier = Modifier.weight(1f),
+                latitude = selectedLatitude,
+                longitude = selectedLongitude,
+                onCoordsChange = { lat, lon ->
+                    selectedLatitude = lat
+                    selectedLongitude = lon
+                }
+            )
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            FlashlightTile(
+                modifier = Modifier
+                    .weight(1f)
+                    .aspectRatio(1f),
+                context = context
+            )
+            VibrationTile(
+                modifier = Modifier
+                    .weight(1f)
+                    .aspectRatio(1f),
+                context = context
             )
         }
     }
