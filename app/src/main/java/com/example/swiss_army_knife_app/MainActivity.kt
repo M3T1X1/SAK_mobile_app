@@ -21,6 +21,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -75,6 +76,7 @@ suspend fun fetchCurrentTemperature(city: String): String {
         }
     }
 }
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -82,10 +84,54 @@ class MainActivity : ComponentActivity() {
         setContent {
             Swiss_Army_Knife_AppTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    MainScreen(modifier = Modifier.padding(innerPadding), context = this)
+                    MainScreen(
+                        modifier = Modifier.padding(innerPadding),
+                        context = this@MainActivity
+                    )
                 }
             }
         }
+    }
+
+    fun setScreenBrightness(level: Float) {
+        val lp = window.attributes
+        lp.screenBrightness = level.coerceIn(0f, 1f)
+        window.attributes = lp
+    }
+}
+
+@Composable
+fun AmbientLightController(
+    context: Context,
+    onLuxChange: (Float) -> Unit
+) {
+    var lux by remember { mutableStateOf(0f) }
+
+    val sensorManager = remember {
+        context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+    }
+    val lightSensor = remember { sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT) }
+
+    val sensorListener = remember {
+        object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent) {
+                lux = event.values[0]
+                val normalizedBrightness = (lux / 1000f).coerceIn(0f, 1f)
+                onLuxChange(normalizedBrightness)
+            }
+            override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) {}
+        }
+    }
+
+    DisposableEffect(Unit) {
+        if (lightSensor != null) {
+            sensorManager.registerListener(
+                sensorListener,
+                lightSensor,
+                SensorManager.SENSOR_DELAY_NORMAL
+            )
+        }
+        onDispose { sensorManager.unregisterListener(sensorListener) }
     }
 }
 
@@ -156,35 +202,13 @@ fun DataTileSurface(
 }
 
 @Composable
-fun LightSensorTile(modifier: Modifier = Modifier, context: Context) {
-    var lux by remember { mutableStateOf(0f) }
-
-    val sensorManager = remember {
-        context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
-    }
-    val lightSensor = remember { sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT) }
-
-    val sensorListener = remember {
-        object : SensorEventListener {
-            override fun onSensorChanged(event: SensorEvent) {
-                lux = event.values[0]
-            }
-            override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) {}
-        }
-    }
-
-    DisposableEffect(Unit) {
-        sensorManager.registerListener(
-            sensorListener,
-            lightSensor,
-            SensorManager.SENSOR_DELAY_NORMAL
-        )
-        onDispose { sensorManager.unregisterListener(sensorListener) }
-    }
-
+fun LightSensorTile(
+    modifier: Modifier = Modifier,
+    currentLux: Float
+) {
     DataTileSurface(modifier = modifier, text = "") {
         Text(
-            text = "Światło:\n${lux.toInt()} lx",
+            text = "Światło:\n${currentLux.toInt()} lx",
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
             color = MaterialTheme.colorScheme.onSecondaryContainer
         )
@@ -338,11 +362,10 @@ fun SpiritLevelTile(
     val listener = remember {
         object : SensorEventListener {
             override fun onSensorChanged(event: SensorEvent) {
-                val ax = event.values[0]   // lewo/prawo
-                val ay = event.values[1]   // przód/tył
-                val az = event.values[2]   // „góra/dół” (grawitacja)
+                val ax = event.values[0]
+                val ay = event.values[1]
+                val az = event.values[2]
 
-                // prosta aproksymacja – kąt względem grawitacji w stopniach
                 angleX = Math.toDegrees(kotlin.math.atan2(ax.toDouble(), az.toDouble())).toFloat()
                 angleY = Math.toDegrees(kotlin.math.atan2(ay.toDouble(), az.toDouble())).toFloat()
             }
@@ -381,11 +404,28 @@ fun SpiritLevelTile(
 }
 
 @Composable
-fun MainScreen(modifier: Modifier = Modifier, context: Context) {
+fun MainScreen(
+    modifier: Modifier = Modifier,
+    context: Context
+) {
     var currentScreen by remember { mutableStateOf("main") }
-
     var selectedCity by remember { mutableStateOf("Rzeszów") }
     var currentTemp by remember { mutableStateOf("-- °C") }
+    var currentLux by remember { mutableStateOf(0f) }
+    var brightnessLevel by remember { mutableStateOf(0.5f) }
+
+    AmbientLightController(
+        context = context,
+        onLuxChange = { level ->
+            brightnessLevel = level
+            currentLux = level * 1000f
+        }
+    )
+
+    val activity = context as MainActivity
+    LaunchedEffect(brightnessLevel) {
+        activity.setScreenBrightness(brightnessLevel)
+    }
 
     LaunchedEffect(selectedCity) {
         val temp = fetchCurrentTemperature(selectedCity)
@@ -404,8 +444,7 @@ fun MainScreen(modifier: Modifier = Modifier, context: Context) {
                 Image(
                     painter = painterResource(id = R.drawable.fav),
                     contentDescription = "Logo aplikacji",
-                    modifier = Modifier
-                        .size(96.dp)
+                    modifier = Modifier.size(96.dp)
                 )
 
                 Row(
@@ -436,9 +475,8 @@ fun MainScreen(modifier: Modifier = Modifier, context: Context) {
             selectedCity = selectedCity,
             onCityChange = { selectedCity = it },
             currentTemp = currentTemp,
-            onTempChange = { currentTemp = it }
+            currentLux = currentLux
         )
-
         "clickables" -> ClickableScreen(
             modifier = modifier,
             onBack = { currentScreen = "main" },
@@ -455,7 +493,7 @@ fun DataScreen(
     selectedCity: String,
     onCityChange: (String) -> Unit,
     currentTemp: String,
-    onTempChange: (String) -> Unit
+    currentLux: Float
 ) {
     Column(
         modifier = modifier
@@ -468,7 +506,6 @@ fun DataScreen(
             style = MaterialTheme.typography.headlineMedium
         )
 
-        // GÓRNY RZĄD – 3 równe kafelki
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -477,7 +514,7 @@ fun DataScreen(
         ) {
             LightSensorTile(
                 modifier = Modifier.weight(1f),
-                context = context
+                currentLux = currentLux
             )
             StepCounterTile(
                 modifier = Modifier.weight(1f),
@@ -489,7 +526,6 @@ fun DataScreen(
             )
         }
 
-        // DOLNY RZĄD – 2 równe kafelki
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -500,7 +536,6 @@ fun DataScreen(
                 modifier = Modifier.weight(1f),
                 currentTemp = currentTemp
             )
-
             CityTile(
                 modifier = Modifier.weight(1f),
                 selectedCity = selectedCity,
@@ -629,6 +664,8 @@ fun TemperatureTile(
 @Composable
 fun MainScreenPreview() {
     Swiss_Army_Knife_AppTheme {
-        MainScreen(context = androidx.compose.ui.platform.LocalContext.current)
+        MainScreen(
+            context = LocalContext.current
+        )
     }
 }
