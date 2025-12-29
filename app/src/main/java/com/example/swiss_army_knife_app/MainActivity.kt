@@ -16,20 +16,25 @@ import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.tooling.preview.Preview
 import com.example.swiss_army_knife_app.ui.theme.Swiss_Army_Knife_AppTheme
-import androidx.compose.foundation.Image
-import androidx.compose.ui.res.painterResource
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -50,6 +55,13 @@ data class WeatherData(
     val windSpeed: Float = 0f,
     val windDirection: Float = 0f,
     val weatherCode: Int = 0
+)
+
+data class SavedLocation(
+    val name: String,
+    val latitude: Float,
+    val longitude: Float,
+    val timestamp: Long = System.currentTimeMillis()
 )
 
 suspend fun fetchWeatherData(latitude: Float, longitude: Float): WeatherData {
@@ -109,17 +121,18 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+}
 
-    fun setScreenBrightness(level: Float) {
-        val lp = window.attributes
-        lp.screenBrightness = level.coerceIn(0f, 1f)
-        window.attributes = lp
-    }
+fun setScreenBrightness(window: android.view.Window, level: Float) {
+    val lp = window.attributes
+    lp.screenBrightness = level.coerceIn(0f, 1f)
+    window.attributes = lp
 }
 
 @Composable
 fun AmbientLightController(
     context: Context,
+    window: android.view.Window,
     enabled: Boolean,
     onLuxChange: (Float) -> Unit
 ) {
@@ -136,6 +149,9 @@ fun AmbientLightController(
                 lux = event.values[0]
                 val normalizedBrightness = (lux / 1000f).coerceIn(0f, 1f)
                 onLuxChange(normalizedBrightness)
+                if (enabled) {
+                    setScreenBrightness(window, normalizedBrightness)
+                }
             }
             override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) {}
         }
@@ -428,19 +444,86 @@ fun SpiritLevelTile(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BackButton(text: String = "Powrót", onClick: () -> Unit) {
-    Button(
-        onClick = onClick,
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(48.dp),
-        shape = MaterialTheme.shapes.medium
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
-        )
+fun LocationHistoryTile(
+    modifier: Modifier = Modifier,
+    selectedLatitude: Float,
+    selectedLongitude: Float,
+    onLocationSelected: (Float, Float) -> Unit,
+    locations: List<SavedLocation>,
+    onDeleteLocation: (SavedLocation) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    DataTileSurface(modifier = modifier, text = "") {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = "Historia (${locations.size})",
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(Modifier.height(4.dp))
+
+            AnimatedVisibility(visible = locations.isNotEmpty()) {
+                LazyColumn(
+                    modifier = Modifier
+                        .height(if (expanded) 140.dp else 80.dp)
+                        .fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    items(locations.take(10)) { location ->
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    onLocationSelected(location.latitude, location.longitude)
+                                },
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (selectedLatitude == location.latitude &&
+                                    selectedLongitude == location.longitude)
+                                    MaterialTheme.colorScheme.primary
+                                else
+                                    MaterialTheme.colorScheme.surfaceVariant
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = location.name,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    maxLines = 1,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(
+                                    text = String.format("%.2f°N %.2f°E",
+                                        location.latitude, location.longitude),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                IconButton(
+                                    onClick = { onDeleteLocation(location) },
+                                    modifier = Modifier.size(20.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Delete,
+                                        contentDescription = "Usuń",
+                                        modifier = Modifier.size(16.dp),
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -449,11 +532,12 @@ fun CityTile(
     modifier: Modifier = Modifier,
     latitude: Float,
     longitude: Float,
-    onCoordsChange: (Float, Float) -> Unit
+    onCoordsChange: (String, Float, Float) -> Unit
 ) {
     var showDialog by remember { mutableStateOf(false) }
     var latText by remember { mutableStateOf(latitude.toString()) }
     var lonText by remember { mutableStateOf(longitude.toString()) }
+    var locationName by remember { mutableStateOf("Nowy punkt") }
 
     DataTileSurface(modifier = modifier, text = "") {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -484,6 +568,14 @@ fun CityTile(
             text = {
                 Column {
                     OutlinedTextField(
+                        value = locationName,
+                        onValueChange = { locationName = it },
+                        label = { Text("Nazwa lokalizacji") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
                         value = latText,
                         onValueChange = { latText = it },
                         label = { Text("Szerokość (lat) -90..90") },
@@ -507,21 +599,21 @@ fun CityTile(
                         val newLon = lonText.toFloatOrNull()
 
                         if (newLat != null && newLon != null &&
-                            newLat in -90f..90f && newLon in -180f..180f) {
-                            onCoordsChange(newLat, newLon)
+                            newLat in -90f..90f && newLon in -180f..180f &&
+                            locationName.isNotBlank()) {
+                            onCoordsChange(locationName, newLat, newLon)
                             showDialog = false
                         }
                     }
                 ) {
-                    Text("OK")
+                    Text("Zapisz")
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDialog = false }) {
                     Text("Anuluj")
                 }
-            }
-        )
+            })
     }
 }
 
@@ -559,7 +651,7 @@ fun WeatherTile(
                     color = MaterialTheme.colorScheme.onSecondaryContainer
                 )
                 Text(
-                    text = "Wilg: ${weather.humidity.toInt()}%\nWiatr: ${weather.windSpeed.toInt()} km/h\nOpady: ${weather.precipitation.toInt()} mm",
+                    text = "Wilg: ${weather.humidity.toInt()}%\nWiatr: ${weather.windSpeed.toInt()} km/h",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSecondaryContainer
                 )
@@ -575,36 +667,38 @@ fun MainScreen(
 ) {
     var selectedLatitude by remember { mutableStateOf(50.0413f) }
     var selectedLongitude by remember { mutableStateOf(21.999f) }
+
+    val locations = remember { mutableStateListOf<SavedLocation>() }
+
     var weatherData by remember { mutableStateOf(WeatherData()) }
     var isLoadingWeather by remember { mutableStateOf(false) }
     var currentLux by remember { mutableStateOf(0f) }
-    var brightnessLevel by remember { mutableStateOf(0.5f) }
     var autoBrightnessEnabled by remember { mutableStateOf(true) }
+
+    val activity = context as? MainActivity
+    val window = (context as? ComponentActivity)?.window
+
+    LaunchedEffect(Unit) {
+        if (locations.isEmpty()) {
+            locations.add(SavedLocation("Rzeszów", 50.0413f, 21.999f))
+        }
+    }
 
     AmbientLightController(
         context = context,
+        window = window ?: throw IllegalStateException("No window available"),
         enabled = autoBrightnessEnabled,
         onLuxChange = { level ->
-            brightnessLevel = level
             currentLux = level * 1000f
         }
     )
-
-    val activity = context as MainActivity
-    LaunchedEffect(brightnessLevel, autoBrightnessEnabled) {
-        if (autoBrightnessEnabled) {
-            activity.setScreenBrightness(brightnessLevel)
-        } else {
-            activity.setScreenBrightness(0.5f)
-        }
-    }
 
     LaunchedEffect(selectedLatitude, selectedLongitude) {
         while (true) {
             isLoadingWeather = true
             try {
                 weatherData = fetchWeatherData(selectedLatitude, selectedLongitude)
-                Log.d("Weather", "Updated: ${weatherData.temperature}°C")
+                Log.d("Weather", "Updated: ${weatherData.temperature}°C dla $selectedLatitude, $selectedLongitude")
             } catch (e: Exception) {
                 Log.e("Weather", "Fetch failed: ${e.message}")
                 weatherData = WeatherData(temperature = -999f)
@@ -684,12 +778,44 @@ fun MainScreen(
                 modifier = Modifier.weight(1f),
                 latitude = selectedLatitude,
                 longitude = selectedLongitude,
-                onCoordsChange = { lat, lon ->
+                onCoordsChange = { name, lat, lon ->
+                    val existingIndex = locations.indexOfFirst {
+                        it.latitude == lat && it.longitude == lon
+                    }
+                    if (existingIndex >= 0) {
+                        val existing = locations.removeAt(existingIndex)
+                        locations.add(0, existing.copy(name = name, timestamp = System.currentTimeMillis()))
+                    } else {
+                        locations.add(0, SavedLocation(name, lat, lon))
+                    }
                     selectedLatitude = lat
                     selectedLongitude = lon
                 }
             )
         }
+
+        LocationHistoryTile(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            selectedLatitude = selectedLatitude,
+            selectedLongitude = selectedLongitude,
+            locations = locations,
+            onLocationSelected = { lat, lon ->
+                selectedLatitude = lat
+                selectedLongitude = lon
+                val selectedIndex = locations.indexOfFirst {
+                    it.latitude == lat && it.longitude == lon
+                }
+                if (selectedIndex > 0) {
+                    val selected = locations.removeAt(selectedIndex)
+                    locations.add(0, selected.copy(timestamp = System.currentTimeMillis()))
+                }
+            },
+            onDeleteLocation = { location ->
+                locations.remove(location)
+            }
+        )
 
         Row(
             modifier = Modifier
