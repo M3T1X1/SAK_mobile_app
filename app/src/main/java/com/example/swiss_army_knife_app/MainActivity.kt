@@ -157,6 +157,12 @@ fun AmbientLightController(
         }
     }
 
+    LaunchedEffect(enabled) {
+        if (!enabled) {
+            setScreenBrightness(window, 0.5f)
+        }
+    }
+
     LaunchedEffect(enabled, lightSensor) {
         if (enabled && lightSensor != null) {
             sensorManager.registerListener(
