@@ -19,9 +19,10 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
@@ -731,6 +732,8 @@ fun MainScreen(
     var currentLux by remember { mutableStateOf(0f) }
     var autoBrightnessEnabled by remember { mutableStateOf(true) }
     var stepCounterEnabled by remember { mutableStateOf(true) }
+    var showAboutDialog by remember { mutableStateOf(false) }
+
     val activity = context as? MainActivity
     val window = (context as? ComponentActivity)?.window
 
@@ -789,6 +792,13 @@ fun MainScreen(
                         fontWeight = FontWeight.Bold
                     )
                 )
+                Spacer(modifier = Modifier.width(12.dp))
+                Button(
+                    onClick = { showAboutDialog = true },
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                ) {
+                    Text("About")
+                }
             }
 
             Row(
@@ -893,6 +903,23 @@ fun MainScreen(
                 context = context
             )
         }
+    }
+
+    if (showAboutDialog) {
+        AlertDialog(
+            onDismissRequest = { showAboutDialog = false },
+            title = { Text("O aplikacji") },
+            text = {
+                Text(
+                    "Aplikacja mobilna stworzona na rzecz zaliczenia przedmiotu Programowanie Urządzeń Mobilnych na Uniwersytecie Rzeszowskim\n\n Autor: Kacper Dusza 131427"
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showAboutDialog = false }) {
+                    Text("OK")
+                }
+            }
+        )
     }
 }
 
