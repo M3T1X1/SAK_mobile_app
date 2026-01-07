@@ -1,4 +1,4 @@
-package com.example.swiss_army_knife_app.ui.theme
+package pl.edu.ur.kd131427.Swiss_Army_Knife_App.ui.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle

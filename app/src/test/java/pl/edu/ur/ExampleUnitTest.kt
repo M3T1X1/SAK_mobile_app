@@ -1,4 +1,4 @@
-package com.example.swiss_army_knife_app
+package pl.edu.ur
 
 import org.junit.Test
 

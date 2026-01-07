@@ -7,13 +7,13 @@ plugins {
 }
 
 android {
-    namespace = "com.example.swiss_army_knife_app"
+    namespace = "pl.edu.ur.kd131427.Swiss_Army_Knife_App"
     compileSdk {
         version = release(36)
     }
 
     defaultConfig {
-        applicationId = "com.example.swiss_army_knife_app"
+        applicationId = "pl.edu.ur.kd131427.Swiss_Army_Knife_App"
         minSdk = 31
         targetSdk = 36
         versionCode = 1

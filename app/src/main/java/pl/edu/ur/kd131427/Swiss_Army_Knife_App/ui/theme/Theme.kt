@@ -1,6 +1,5 @@
-package com.example.swiss_army_knife_app.ui.theme
+package pl.edu.ur.kd131427.Swiss_Army_Knife_App.ui.theme
 
-import android.app.Activity
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme

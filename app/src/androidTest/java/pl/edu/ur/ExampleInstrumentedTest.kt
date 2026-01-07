@@ -1,4 +1,4 @@
-package com.example.swiss_army_knife_app
+package pl.edu.ur
 
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4

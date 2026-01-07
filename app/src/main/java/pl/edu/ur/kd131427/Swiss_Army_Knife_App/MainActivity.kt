@@ -1,4 +1,4 @@
-package com.example.swiss_army_knife_app
+package pl.edu.ur.kd131427.Swiss_Army_Knife_App
 
 import android.Manifest
 import android.content.Context
@@ -7,6 +7,7 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.hardware.camera2.CameraAccessException
+import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.os.Bundle
 import android.util.Log
@@ -35,17 +36,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.example.swiss_army_knife_app.ui.theme.Swiss_Army_Knife_AppTheme
+import pl.edu.ur.kd131427.Swiss_Army_Knife_App.ui.theme.Swiss_Army_Knife_AppTheme
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.view.Window
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlin.math.atan2
 
 val httpClient = OkHttpClient()
 
@@ -124,7 +127,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-fun setScreenBrightness(window: android.view.Window, level: Float) {
+fun setScreenBrightness(window: Window, level: Float) {
     val lp = window.attributes
     lp.screenBrightness = level.coerceIn(0f, 1f)
     window.attributes = lp
@@ -133,7 +136,7 @@ fun setScreenBrightness(window: android.view.Window, level: Float) {
 @Composable
 fun AmbientLightController(
     context: Context,
-    window: android.view.Window,
+    window: Window,
     enabled: Boolean,
     onLuxChange: (Float) -> Unit
 ) {
@@ -341,7 +344,7 @@ fun FlashlightTile(modifier: Modifier = Modifier, context: Context) {
         try {
             cameraManager.cameraIdList.firstOrNull { id ->
                 val hasFlash = cameraManager.getCameraCharacteristics(id)
-                    .get(android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE)
+                    .get(CameraCharacteristics.FLASH_INFO_AVAILABLE)
                     ?: false
                 hasFlash
             } ?: ""
@@ -438,8 +441,8 @@ fun SpiritLevelTile(
                 val ay = event.values[1]
                 val az = event.values[2]
 
-                angleX = Math.toDegrees(kotlin.math.atan2(ax.toDouble(), az.toDouble())).toFloat()
-                angleY = Math.toDegrees(kotlin.math.atan2(ay.toDouble(), az.toDouble())).toFloat()
+                angleX = Math.toDegrees(atan2(ax.toDouble(), az.toDouble())).toFloat()
+                angleY = Math.toDegrees(atan2(ay.toDouble(), az.toDouble())).toFloat()
             }
             override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
         }
